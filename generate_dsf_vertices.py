@@ -1,86 +1,80 @@
+from pathlib import Path
+
 import numpy as np
-import pandas as pd
 
-# =========================
-# Settings
-# =========================
-N = 32
 
-R_list = [
-    ("round", 1.0),
-    ("normal", np.sqrt(10)),
-    ("long", 10.0),
-    ("very_long", 10.0 * np.sqrt(10)),
-    ("extreme_long", 100.0),
+# =========================================================
+# Generate DSF vertices only.
+#
+# Each output CSV stores exactly 32 vertices with x,y,z columns.
+# Scale labels are encoded in the file names, not as extra CSV columns.
+# =========================================================
+
+RNG_SEED = 1
+NUM_VERTICES = 32
+DIM = 3
+
+SCALE_CASES = [
+    ("verysmall", -3, -1),
+    ("small", -2, 0),
+    ("normal", -1, 1),
+    ("large", 0, 2),
+    ("verylarge", 1, 3),
 ]
 
-output_file = "dsf_vertices_all.csv"
+OUTPUT_DIR = Path("dsf_vertices_xyz")
 
-# =========================
-# Fixed direction u_i
-# =========================
-U = np.zeros((N, 3))
 
-# v_min direction
-U[0] = np.array([0.0, 0.0, -1.0])
+def random_unit_vectors(rng: np.random.Generator, count: int) -> np.ndarray:
+    vectors = rng.normal(size=(count, DIM))
+    norms = np.linalg.norm(vectors, axis=1)
 
-golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+    bad = norms < 1e-12
+    while np.any(bad):
+        vectors[bad] = rng.normal(size=(np.count_nonzero(bad), DIM))
+        norms = np.linalg.norm(vectors, axis=1)
+        bad = norms < 1e-12
 
-# u_2 ~ u_32 : upper hemisphere
-for idx in range(1, N):
-    k = idx - 1
+    return vectors / norms[:, None]
 
-    z = (k + 0.5) / (N - 1)
-    rho = np.sqrt(1.0 - z**2)
-    theta = k * golden_angle
 
-    U[idx] = np.array([
-        rho * np.cos(theta),
-        rho * np.sin(theta),
-        z
-    ])
+def generate_base_vertices(
+    rng: np.random.Generator,
+    log_radius_min: float,
+    log_radius_max: float,
+) -> np.ndarray:
+    directions = random_unit_vectors(rng, NUM_VERTICES)
+    log_radii = rng.uniform(log_radius_min, log_radius_max, size=NUM_VERTICES)
+    radii = np.power(10.0, log_radii)
+    return directions * radii[:, None]
 
-# =========================
-# Generate all vertices
-# =========================
-all_rows = []
 
-for label, R in R_list:
+def save_vertices(path: Path, vertices: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savetxt(
+        path,
+        vertices,
+        delimiter=",",
+        header="x,y,z",
+        comments="",
+        fmt="%.17g",
+    )
 
-    # symmetric around 1
-    # r_1  = 1 / sqrt(R)
-    # r_32 = sqrt(R)
-    # r_32 / r_1 = R
-    exponent = np.arange(N) / (N - 1) - 0.5
-    r = R ** exponent
 
-    V = U * r[:, None]
+def main() -> None:
+    rng = np.random.default_rng(RNG_SEED)
+    saved_count = 0
 
-    for i in range(N):
-        all_rows.append({
-            "shape_type": label,
-            "R": R,
-            "log10_R": np.log10(R),
-            "index": i + 1,
+    for scale_label, log_radius_min, log_radius_max in SCALE_CASES:
+        base_vertices = generate_base_vertices(rng, log_radius_min, log_radius_max)
+        save_vertices(OUTPUT_DIR / f"{scale_label}.csv", base_vertices)
+        saved_count += 1
 
-            "r_i": r[i],
+    print(f"Saved {saved_count} vertex files under: {OUTPUT_DIR}")
+    print(
+        f"Each file contains {NUM_VERTICES} rows and only x,y,z coordinate columns."
+    )
 
-            "u_x": U[i, 0],
-            "u_y": U[i, 1],
-            "u_z": U[i, 2],
 
-            "v_x": V[i, 0],
-            "v_y": V[i, 1],
-            "v_z": V[i, 2],
-
-            "norm_v": np.linalg.norm(V[i]),
-        })
-
-# =========================
-# Save CSV
-# =========================
-df = pd.DataFrame(all_rows)
-df.to_csv(output_file, index=False)
-
-print(f"Saved: {output_file}")
-print(df.groupby("shape_type")["norm_v"].agg(["min", "max"]))
+if __name__ == "__main__":
+    main()
