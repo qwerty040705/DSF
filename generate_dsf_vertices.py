@@ -7,19 +7,21 @@ import numpy as np
 # Generate DSF vertices only.
 #
 # Each output CSV stores exactly 32 vertices with x,y,z columns.
-# Scale labels are encoded in the file names, not as extra CSV columns.
+# Scale labels and sample IDs are encoded in the directory/file names,
+# not as extra CSV columns.
 # =========================================================
 
 RNG_SEED = 1
 NUM_VERTICES = 32
+NUM_SAMPLES_PER_SCALE = 1000
 DIM = 3
 
 SCALE_CASES = [
-    ("verysmall", -3, -1),
-    ("small", -2, 0),
-    ("normal", -1, 1),
     ("large", 0, 2),
+    ("normal", -1, 1),
     ("verylarge", 1, 3),
+    ("small", -2, 0),
+    ("verysmall", -3, -1),
 ]
 
 OUTPUT_DIR = Path("dsf_vertices_xyz")
@@ -66,9 +68,13 @@ def main() -> None:
     saved_count = 0
 
     for scale_label, log_radius_min, log_radius_max in SCALE_CASES:
-        base_vertices = generate_base_vertices(rng, log_radius_min, log_radius_max)
-        save_vertices(OUTPUT_DIR / f"{scale_label}.csv", base_vertices)
-        saved_count += 1
+        for sample_id in range(1, NUM_SAMPLES_PER_SCALE + 1):
+            base_vertices = generate_base_vertices(rng, log_radius_min, log_radius_max)
+            save_vertices(
+                OUTPUT_DIR / scale_label / f"sample_{sample_id:04d}.csv",
+                base_vertices,
+            )
+            saved_count += 1
 
     print(f"Saved {saved_count} vertex files under: {OUTPUT_DIR}")
     print(
